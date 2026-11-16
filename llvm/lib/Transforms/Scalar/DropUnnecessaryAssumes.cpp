@@ -7,8 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/DropUnnecessaryAssumes.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/BundleAttributes.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Transforms/Utils/Local.h"
@@ -17,13 +19,48 @@ using namespace llvm;
 using namespace llvm::PatternMatch;
 
 static bool affectedValuesAreEphemeral(ArrayRef<Value *> Affected) {
-  // If all the affected uses have only one use (part of the assume), then
-  // the assume does not provide useful information. Note that additional
-  // users may appear as a result of inlining and CSE, so we should only
-  // make this assumption late in the optimization pipeline.
-  // TODO: Handle dead cyclic usages.
-  // TODO: Handle multiple dead assumes on the same value.
-  return all_of(Affected, match_fn(m_OneUse(m_Value())));
+  // Check whether all the uses are ephemeral, i.e. recursively only used
+  // by assumes. In that case, the assume does not provide useful information.
+  // Note that additional users may appear as a result of inlining and CSE,
+  // so we should only make this assumption late in the optimization pipeline.
+  SmallSetVector<Instruction *, 32> Worklist;
+  auto AddUsers = [&](Value *V) {
+    for (User *U : V->users()) {
+      // Bail out if we need to inspect too many users.
+      if (Worklist.size() >= 32)
+        return false;
+      Worklist.insert(cast<Instruction>(U));
+    }
+    return true;
+  };
+
+  for (Value *V : Affected) {
+    // Do not handle assumes on globals for now. The use list for them may
+    // contain uses in other functions.
+    if (!isa<Instruction, Argument>(V))
+      return false;
+
+    if (!AddUsers(V))
+      return false;
+  }
+
+  for (unsigned Idx = 0; Idx < Worklist.size(); ++Idx) {
+    Instruction *I = Worklist[Idx];
+
+    // Use in assume is ephemeral.
+    if (isa<AssumeInst>(I))
+      continue;
+
+    // Use in side-effecting instruction is non-ephemeral.
+    if (I->mayHaveSideEffects() || I->isTerminator())
+      return false;
+
+    // Otherwise, recursively look at the users.
+    if (!AddUsers(I))
+      return false;
+  }
+
+  return true;
 }
 
 PreservedAnalyses
@@ -31,7 +68,7 @@ DropUnnecessaryAssumesPass::run(Function &F, FunctionAnalysisManager &FAM) {
   AssumptionCache &AC = FAM.getResult<AssumptionAnalysis>(F);
   bool Changed = false;
 
-  for (const WeakVH &Elem : AC.assumptions()) {
+  for (WeakVH &Elem : AC.assumptions()) {
     auto *Assume = cast_or_null<AssumeInst>(Elem);
     if (!Assume)
       continue;
@@ -42,10 +79,20 @@ DropUnnecessaryAssumesPass::run(Function &F, FunctionAnalysisManager &FAM) {
       SmallVector<OperandBundleDef> KeptBundles;
       unsigned NumBundles = Assume->getNumOperandBundles();
       for (unsigned I = 0; I != NumBundles; ++I) {
-        auto IsDead = [](OperandBundleUse Bundle) {
+        auto IsDead = [&](OperandBundleUse Bundle) {
+          switch (getBundleAttrFromOBU(Bundle)) {
           // "ignore" operand bundles are always dead.
-          if (Bundle.getTagName() == "ignore")
+          case BundleAttr::Ignore:
             return true;
+
+          // "dereferenceable" operand bundles are only dropped if requested
+          // (e.g., after loop vectorization has run).
+          case BundleAttr::Dereferenceable:
+            return DropDereferenceable;
+
+          default:
+            break;
+          }
 
           // Bundles without arguments do not affect any specific values.
           // Always keep them for now.
@@ -71,10 +118,12 @@ DropUnnecessaryAssumesPass::run(Function &F, FunctionAnalysisManager &FAM) {
           // All operand bundles are dead, remove the whole assume.
           Assume->eraseFromParent();
         } else {
-          // Otherwise only drop the dead operand bundles.
+          // Otherwise only drop the dead operand bundles. Replace the existing
+          // assumption in place so the cache's assumption vector is not grown
+          // while we iterate over it.
           CallBase *NewAssume =
               CallBase::Create(Assume, KeptBundles, Assume->getIterator());
-          AC.registerAssumption(cast<AssumeInst>(NewAssume));
+          AC.replaceAssumption(Elem, cast<AssumeInst>(NewAssume));
           Assume->eraseFromParent();
         }
 
@@ -86,7 +135,8 @@ DropUnnecessaryAssumesPass::run(Function &F, FunctionAnalysisManager &FAM) {
 
     Value *Cond = Assume->getArgOperand(0);
     // Don't drop type tests, which have special semantics.
-    if (match(Cond, m_Intrinsic<Intrinsic::type_test>()))
+    if (match(Cond, m_Intrinsic<Intrinsic::type_test>()) ||
+        match(Cond, m_Intrinsic<Intrinsic::public_type_test>()))
       continue;
 
     SmallVector<Value *> Affected;
@@ -107,4 +157,12 @@ DropUnnecessaryAssumesPass::run(Function &F, FunctionAnalysisManager &FAM) {
     return PA;
   }
   return PreservedAnalyses::all();
+}
+
+void DropUnnecessaryAssumesPass::printPipeline(
+    raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
+  static_cast<PassInfoMixin<DropUnnecessaryAssumesPass> *>(this)->printPipeline(
+      OS, MapClassName2PassName);
+  if (DropDereferenceable)
+    OS << "<drop-deref>";
 }

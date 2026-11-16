@@ -275,7 +275,7 @@ def testPrintIrAfterAll():
         pm = PassManager.parse("builtin.module(canonicalize)")
         ctx.enable_multithreading(False)
         pm.enable_ir_printing()
-        # CHECK: // -----// IR Dump After Canonicalizer (canonicalize) //----- //
+        # CHECK: // -----// IR Dump After CanonicalizerPass: canonicalize{{.*}} //----- //
         # CHECK: module {
         # CHECK:   func.func @main() {
         # CHECK:     return
@@ -301,14 +301,14 @@ def testPrintIrBeforeAndAfterAll():
         pm = PassManager.parse("builtin.module(canonicalize)")
         ctx.enable_multithreading(False)
         pm.enable_ir_printing(print_before_all=True, print_after_all=True)
-        # CHECK: // -----// IR Dump Before Canonicalizer (canonicalize) //----- //
+        # CHECK: // -----// IR Dump Before CanonicalizerPass: canonicalize{{.*}} //----- //
         # CHECK: module {
         # CHECK:   func.func @main() {
         # CHECK:     %[[C10:.*]] = arith.constant 10 : i64
         # CHECK:     return
         # CHECK:   }
         # CHECK: }
-        # CHECK: // -----// IR Dump After Canonicalizer (canonicalize) //----- //
+        # CHECK: // -----// IR Dump After CanonicalizerPass: canonicalize{{.*}} //----- //
         # CHECK: module {
         # CHECK:   func.func @main() {
         # CHECK:     return
@@ -426,7 +426,7 @@ def testPrintIrTree():
                 entries = sorted(os.listdir(directory))
                 for i, entry in enumerate(entries):
                     path = os.path.join(directory, entry)
-                    connector = "\-- " if i == len(entries) - 1 else "|-- "
+                    connector = r"\-- " if i == len(entries) - 1 else "|-- "
                     log(f"{prefix}{connector}{entry}")
                     if os.path.isdir(path):
                         print_file_tree(
@@ -435,3 +435,23 @@ def testPrintIrTree():
 
             print_file_tree(temp_dir)
         log("// Tree printing end")
+
+
+# CHECK-LABEL: TEST: testEnableStatistics
+@run
+def testEnableStatistics():
+    with Context() as ctx:
+        module = ModuleOp.parse(
+            """
+          module {
+            func.func @main() {
+              %0 = arith.constant 10
+              return
+            }
+          }
+        """
+        )
+        pm = PassManager.parse("builtin.module(canonicalize)")
+        pm.enable_statistics()
+        # CHECK: Pass statistics report
+        pm.run(module)

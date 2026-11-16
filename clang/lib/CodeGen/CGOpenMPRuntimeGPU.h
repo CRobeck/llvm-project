@@ -59,6 +59,11 @@ private:
   /// Get barrier to synchronize all threads in a block.
   void syncCTAThreads(CodeGenFunction &CGF);
 
+  /// Helper to emit the kernel environment global for an `ompx_bare` kernel,
+  /// which does not go through emitKernelInit/emitKernelDeinit.
+  void emitBareKernelEnvironment(const OMPExecutableDirective &D,
+                                 CodeGenFunction &CGF);
+
   /// Helper for target directive initialization.
   void emitKernelInit(const OMPExecutableDirective &D, CodeGenFunction &CGF,
                       EntryFunctionState &EST, bool IsSPMD);
@@ -163,12 +168,14 @@ public:
                           SourceLocation Loc) override;
 
   // Currently unsupported on the device.
+  using CGOpenMPRuntime::emitMessageClause;
   llvm::Value *emitMessageClause(CodeGenFunction &CGF, const Expr *Message,
                                  SourceLocation Loc) override;
 
   // Currently unsupported on the device.
-  virtual llvm::Value *emitSeverityClause(OpenMPSeverityClauseKind Severity,
-                                          SourceLocation Loc) override;
+  using CGOpenMPRuntime::emitSeverityClause;
+  llvm::Value *emitSeverityClause(OpenMPSeverityClauseKind Severity,
+                                  SourceLocation Loc) override;
 
   /// Emits call to void __kmpc_push_num_threads(ident_t *loc, kmp_int32
   /// global_tid, kmp_int32 num_threads) to generate code for 'num_threads'

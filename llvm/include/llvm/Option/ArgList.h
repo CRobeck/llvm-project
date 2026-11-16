@@ -20,6 +20,7 @@
 #include "llvm/Option/OptSpecifier.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/Error.h"
 #include <algorithm>
 #include <cstddef>
 #include <initializer_list>
@@ -279,6 +280,28 @@ public:
   /// which are guaranteed to be the first strings in the argument string
   /// list.
   virtual unsigned getNumInputArgStrings() const = 0;
+
+  /// getSubCommand - Find subcommand from the arguments if the usage is valid.
+  ///
+  /// \param AllSubCommands - A list of all valid subcommands.
+  /// \param HandleMultipleSubcommands - A callback for the case where multiple
+  /// subcommands are present in the arguments. It gets a list of all found
+  /// subcommands.
+  /// \param HandleOtherPositionals - A callback for the case where positional
+  /// arguments that are not subcommands are present.
+  /// \param AllowSubCommandNamesAsPositionals - If true, only the first
+  /// positional argument that matches a subcommand name is the subcommand.
+  /// Later ones are passed to \p HandleOtherPositionals instead of being
+  /// reported as multiple subcommands, so that e.g. `foo foo` is subcommand
+  /// `foo` with a positional argument `foo`.
+  /// \return The name of the subcommand found. If no subcommand is found, or
+  /// if multiple subcommands are found (after \p HandleMultipleSubcommands is
+  /// called), this returns an empty StringRef.
+  LLVM_ABI StringRef getSubCommand(
+      ArrayRef<OptTable::SubCommand> AllSubCommands,
+      std::function<void(ArrayRef<StringRef>)> HandleMultipleSubcommands,
+      std::function<void(ArrayRef<StringRef>)> HandleOtherPositionals,
+      bool AllowSubCommandNamesAsPositionals = false) const;
 
   /// @}
   /// @name Argument Lookup Utilities

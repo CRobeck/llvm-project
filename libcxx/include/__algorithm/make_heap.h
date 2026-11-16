@@ -29,14 +29,14 @@ _LIBCPP_PUSH_MACROS
 _LIBCPP_BEGIN_NAMESPACE_STD
 
 template <class _AlgPolicy, class _Compare, class _RandomAccessIterator>
-inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 void
+inline _LIBCPP_CONSTEXPR_SINCE_CXX14 void
 __make_heap(_RandomAccessIterator __first, _RandomAccessIterator __last, _Compare&& __comp) {
   __comp_ref_type<_Compare> __comp_ref = __comp;
 
-  using __diff_t     = __iter_diff_t<_RandomAccessIterator>;
+  using __diff_t     = __iterator_difference_type<_RandomAccessIterator>;
   const __diff_t __n = __last - __first;
 
-  const bool __assume_both_children = is_arithmetic<__iter_value_type<_RandomAccessIterator> >::value;
+  const bool __assume_both_children = is_arithmetic<__iterator_value_type<_RandomAccessIterator> >::value;
 
   // While it would be correct to always assume we have both children, in practice we observed this to be a performance
   // improvement only for arithmetic types.
@@ -54,14 +54,13 @@ __make_heap(_RandomAccessIterator __first, _RandomAccessIterator __last, _Compar
 }
 
 template <class _RandomAccessIterator, class _Compare>
-inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX20 void
+inline _LIBCPP_CONSTEXPR_SINCE_CXX20 void
 make_heap(_RandomAccessIterator __first, _RandomAccessIterator __last, _Compare __comp) {
   std::__make_heap<_ClassicAlgPolicy>(std::move(__first), std::move(__last), __comp);
 }
 
 template <class _RandomAccessIterator>
-inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX20 void
-make_heap(_RandomAccessIterator __first, _RandomAccessIterator __last) {
+inline _LIBCPP_CONSTEXPR_SINCE_CXX20 void make_heap(_RandomAccessIterator __first, _RandomAccessIterator __last) {
   std::make_heap(std::move(__first), std::move(__last), __less<>());
 }
 

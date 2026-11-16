@@ -68,9 +68,8 @@ void FileCollector::PathCanonicalizer::updateWithRealPath(
   SmallString<256> RealPath;
   auto DirWithSymlink = CachedDirs.find(Directory);
   if (DirWithSymlink == CachedDirs.end()) {
-    // FIXME: Should this be a call to FileSystem::getRealpath(), in some
-    // cases? What if there is nothing on disk?
-    if (sys::fs::real_path(Directory, RealPath))
+    // FIXME: What if there is nothing on disk?
+    if (VFS->getRealPath(Directory, RealPath))
       return;
     CachedDirs[Directory] = std::string(RealPath);
   } else {
@@ -290,6 +289,12 @@ public:
         Collector->addFile(Output);
     }
     return EC;
+  }
+
+  void
+  getDirectoryContentRealSources(const Twine &Dir,
+                                 SmallVectorImpl<std::string> &Out) override {
+    FS->getDirectoryContentRealSources(Dir, Out);
   }
 
   std::error_code isLocal(const Twine &Path, bool &Result) override {

@@ -15,22 +15,9 @@
 #include "flang/Lower/SymbolMap.h"
 #include "flang/Optimizer/Builder/HLFIRTools.h"
 #include "flang/Optimizer/Builder/Runtime/ArrayConstructor.h"
-#include "flang/Optimizer/Builder/Runtime/RTBuilder.h"
 #include "flang/Optimizer/Builder/TemporaryStorage.h"
 #include "flang/Optimizer/Builder/Todo.h"
 #include "flang/Optimizer/HLFIR/HLFIROps.h"
-
-namespace {
-/// Check if we are inside a WHERE construct's masked expression region.
-/// Array constructors inside WHERE statements must be evaluated exactly once
-/// without mask control, similar to non-elemental function calls.
-
-static bool isInWhereMaskedExpression(fir::FirOpBuilder &builder) {
-  mlir::Operation *op = builder.getRegion().getParentOp();
-  return op && op->getParentOfType<hlfir::WhereOp>();
-}
-
-} // namespace
 
 // Array constructors are lowered with three different strategies.
 // All strategies are not possible with all array constructors.
@@ -247,32 +234,11 @@ public:
       elementResult =
           builder.createConvert(loc, exprType.getElementType(), elementResult);
 
-    // The clean-ups associated with the implied-do body operations
-    // must be initiated before the YieldElementOp, so we have to pop the scope
-    // right now.
-    stmtCtx.finalizeAndPop();
-
-    // This is a hacky way to get rid of the DestroyOp clean-up
-    // associated with the final ac-value result if it is hlfir.expr.
-    // Example:
-    //   ... = (/(REPEAT(REPEAT(CHAR(i),2),2),i=1,n)/)
-    // Each intrinsic call lowering will produce hlfir.expr result
-    // with the associated clean-up, but only the last of them
-    // is wrong. It is wrong because the value is used in hlfir.yield_element,
-    // so it cannot be destroyed.
-    mlir::Operation *destroyOp = nullptr;
-    for (mlir::Operation *useOp : elementResult.getUsers())
-      if (mlir::isa<hlfir::DestroyOp>(useOp)) {
-        if (destroyOp)
-          fir::emitFatalError(loc,
-                              "multiple DestroyOp's for ac-value expression");
-        destroyOp = useOp;
-      }
-
-    if (destroyOp)
-      destroyOp->erase();
-
-    hlfir::YieldElementOp::create(builder, loc, elementResult);
+    auto yield = hlfir::YieldElementOp::create(builder, loc, elementResult);
+    Fortran::lower::genCleanUpInRegionIfAny(loc, builder, yield.getCleanup(),
+                                            stmtCtx);
+    if (yield.getCleanup().empty())
+      stmtCtx.pop();
   }
 
   // Override the default, because the context scope must be popped in
@@ -516,26 +482,30 @@ namespace {
 /// evaluating an ac-value.
 template <typename T>
 struct LengthAndTypeCollector {
-  static mlir::Type collect(mlir::Location,
-                            Fortran::lower::AbstractConverter &converter,
-                            const Fortran::evaluate::ArrayConstructor<T> &,
-                            Fortran::lower::SymMap &,
-                            Fortran::lower::StatementContext &,
-                            mlir::SmallVectorImpl<mlir::Value> &) {
+  static mlir::Type
+  collect(mlir::Location, Fortran::lower::AbstractConverter &converter,
+          const Fortran::evaluate::ArrayConstructor<T> &arrayCtorExpr,
+          Fortran::lower::SymMap &, Fortran::lower::StatementContext &,
+          mlir::SmallVectorImpl<mlir::Value> &) {
+    const int kind{arrayCtorExpr.kind()};
     // Numerical and Logical types.
     return Fortran::lower::getFIRType(&converter.getMLIRContext(), T::category,
-                                      T::kind, /*lenParams*/ {});
+                                      kind,
+                                      /*lenParams*/ {});
   }
 };
 
 template <>
-struct LengthAndTypeCollector<Fortran::evaluate::SomeDerived> {
-  static mlir::Type collect(
-      mlir::Location loc, Fortran::lower::AbstractConverter &converter,
-      const Fortran::evaluate::ArrayConstructor<Fortran::evaluate::SomeDerived>
-          &arrayCtorExpr,
-      Fortran::lower::SymMap &symMap, Fortran::lower::StatementContext &stmtCtx,
-      mlir::SmallVectorImpl<mlir::Value> &lengths) {
+struct LengthAndTypeCollector<
+    Fortran::evaluate::Type<Fortran::common::TypeCategory::Derived>> {
+  static mlir::Type
+  collect(mlir::Location loc, Fortran::lower::AbstractConverter &converter,
+          const Fortran::evaluate::ArrayConstructor<
+              Fortran::evaluate::Type<Fortran::common::TypeCategory::Derived>>
+              &arrayCtorExpr,
+          Fortran::lower::SymMap &symMap,
+          Fortran::lower::StatementContext &stmtCtx,
+          mlir::SmallVectorImpl<mlir::Value> &lengths) {
     // Array constructors cannot be unlimited polymorphic (C7113), so there must
     // be a derived type spec available.
     return Fortran::lower::translateDerivedTypeToFIRType(
@@ -543,16 +513,17 @@ struct LengthAndTypeCollector<Fortran::evaluate::SomeDerived> {
   }
 };
 
-template <int Kind>
 using Character =
-    Fortran::evaluate::Type<Fortran::common::TypeCategory::Character, Kind>;
-template <int Kind>
-struct LengthAndTypeCollector<Character<Kind>> {
-  static mlir::Type collect(
-      mlir::Location loc, Fortran::lower::AbstractConverter &converter,
-      const Fortran::evaluate::ArrayConstructor<Character<Kind>> &arrayCtorExpr,
-      Fortran::lower::SymMap &symMap, Fortran::lower::StatementContext &stmtCtx,
-      mlir::SmallVectorImpl<mlir::Value> &lengths) {
+    Fortran::evaluate::Type<Fortran::common::TypeCategory::Character>;
+template <>
+struct LengthAndTypeCollector<Character> {
+  static mlir::Type
+  collect(mlir::Location loc, Fortran::lower::AbstractConverter &converter,
+          const Fortran::evaluate::ArrayConstructor<Character> &arrayCtorExpr,
+          Fortran::lower::SymMap &symMap,
+          Fortran::lower::StatementContext &stmtCtx,
+          mlir::SmallVectorImpl<mlir::Value> &lengths) {
+    const int kind{arrayCtorExpr.kind()};
     llvm::SmallVector<Fortran::lower::LenParameterTy> typeLengths;
     if (const Fortran::evaluate::ExtentExpr *lenExpr = arrayCtorExpr.LEN()) {
       lengths.push_back(
@@ -563,7 +534,7 @@ struct LengthAndTypeCollector<Character<Kind>> {
     }
     return Fortran::lower::getFIRType(&converter.getMLIRContext(),
                                       Fortran::common::TypeCategory::Character,
-                                      Kind, typeLengths);
+                                      kind, typeLengths);
   }
 };
 } // namespace
@@ -797,7 +768,7 @@ hlfir::EntityWithAttributes Fortran::lower::ArrayConstructorBuilder<T>::gen(
   // exactly once without mask control, per Fortran 2023 section 10.2.3.2.
   // Lower them in a special region so that this can be enforced when
   // scheduling forall/where expression evaluations.
-  if (isInWhereMaskedExpression(builder) &&
+  if (hlfir::isInsideHlfirWhereMaskedExpression(builder.getRegion()) &&
       !builder.getRegion().getParentOfType<hlfir::ExactlyOnceOp>()) {
     Fortran::lower::StatementContext localStmtCtx;
     mlir::Type bogusType = builder.getIndexType();

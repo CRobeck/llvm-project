@@ -56,6 +56,9 @@ public:
       Parent->addChild(this);
   }
 
+  LexicalScope(const LexicalScope &) = delete;
+  LexicalScope &operator=(const LexicalScope &) = delete;
+
   // Accessors.
   LexicalScope *getParent() const { return Parent; }
   const MDNode *getDesc() const { return Desc; }
@@ -141,12 +144,15 @@ class LexicalScopes {
 public:
   LexicalScopes() = default;
 
+  LexicalScopes(const LexicalScopes &) = delete;
+  LexicalScopes &operator=(const LexicalScopes &) = delete;
+
   /// Scan machine function and constuct lexical scope nest, resets
   /// the instance if necessary.
-  LLVM_ABI void initialize(const MachineFunction &);
+  LLVM_ABI void scanFunction(const MachineFunction &);
 
-  /// Release memory.
-  LLVM_ABI void reset();
+  /// Reset the instance so that it's prepared for another function.
+  LLVM_ABI void resetFunction();
 
   /// Return true if there is any lexical scope information available.
   bool empty() { return CurrentFnLexicalScope == nullptr; }
@@ -216,12 +222,11 @@ private:
 
   /// Extract instruction ranges for each lexical scopes
   /// for the given machine function.
-  void extractLexicalScopes(SmallVectorImpl<InsnRange> &MIRanges,
-                            DenseMap<const MachineInstr *, LexicalScope *> &M);
+  void extractLexicalScopes(
+      SmallVectorImpl<std::pair<InsnRange, LexicalScope *>> &MIRanges);
   void constructScopeNest(LexicalScope *Scope);
-  void
-  assignInstructionRanges(SmallVectorImpl<InsnRange> &MIRanges,
-                          DenseMap<const MachineInstr *, LexicalScope *> &M);
+  void assignInstructionRanges(
+      ArrayRef<std::pair<InsnRange, LexicalScope *>> MIRanges);
 
   const MachineFunction *MF = nullptr;
 

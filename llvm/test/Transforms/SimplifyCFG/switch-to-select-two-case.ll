@@ -279,7 +279,7 @@ define i8 @switch_to_select_two_case_results_no_default(i32 %i) !prof !0 {
 ; CHECK:       default:
 ; CHECK-NEXT:    unreachable
 ; CHECK:       end:
-; CHECK-NEXT:    [[T0:%.*]] = phi i8 [ 44, [[CASE3]] ], [ 42, [[ENTRY:%.*]] ], [ 42, [[ENTRY]] ]
+; CHECK-NEXT:    [[T0:%.*]] = phi i8 [ 42, [[ENTRY:%.*]] ], [ 42, [[ENTRY]] ], [ 44, [[CASE3]] ]
 ; CHECK-NEXT:    ret i8 [[T0]]
 ;
 entry:
@@ -753,6 +753,25 @@ bb2:
 bb3:
   %phi = phi i1 [ false, %bb1 ], [ true, %bb2 ]
   ret i1 %phi
+}
+
+define i32 @negative_constfold_select() {
+; CHECK-LABEL: @negative_constfold_select(
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:    ret i32 poison
+;
+entry:
+  switch i32 poison, label %default [
+  i32 0, label %bb
+  i32 2, label %bb
+  ]
+
+bb:
+  br label %default
+
+default:
+  %ret = phi i32 [ poison, %entry ], [ poison, %bb ]
+  ret i32 %ret
 }
 
 !0 = !{!"function_entry_count", i64 1000}

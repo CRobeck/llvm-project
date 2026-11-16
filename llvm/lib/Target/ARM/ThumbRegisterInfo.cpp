@@ -49,13 +49,6 @@ ThumbRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   return ARMBaseRegisterInfo::getLargestLegalSuperClass(RC, MF);
 }
 
-const TargetRegisterClass *
-ThumbRegisterInfo::getPointerRegClass(unsigned Kind) const {
-  if (!IsThumb1Only)
-    return ARMBaseRegisterInfo::getPointerRegClass(Kind);
-  return &ARM::tGPRRegClass;
-}
-
 static void emitThumb1LoadConstPool(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator &MBBI,
                                     const DebugLoc &dl, unsigned DestReg,
@@ -66,8 +59,8 @@ static void emitThumb1LoadConstPool(MachineBasicBlock &MBB,
   const ARMSubtarget &STI = MF.getSubtarget<ARMSubtarget>();
   const TargetInstrInfo &TII = *STI.getInstrInfo();
   MachineConstantPool *ConstantPool = MF.getConstantPool();
-  const Constant *C = ConstantInt::get(
-          Type::getInt32Ty(MBB.getParent()->getFunction().getContext()), Val);
+  const Constant *C = ConstantInt::getSigned(
+      Type::getInt32Ty(MBB.getParent()->getFunction().getContext()), Val);
   unsigned Idx = ConstantPool->getConstantPoolIndex(C, Align(4));
 
   BuildMI(MBB, MBBI, dl, TII.get(ARM::tLDRpci))
@@ -85,8 +78,8 @@ static void emitThumb2LoadConstPool(MachineBasicBlock &MBB,
   MachineFunction &MF = *MBB.getParent();
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   MachineConstantPool *ConstantPool = MF.getConstantPool();
-  const Constant *C = ConstantInt::get(
-           Type::getInt32Ty(MBB.getParent()->getFunction().getContext()), Val);
+  const Constant *C = ConstantInt::getSigned(
+      Type::getInt32Ty(MBB.getParent()->getFunction().getContext()), Val);
   unsigned Idx = ConstantPool->getConstantPoolIndex(C, Align(4));
 
   BuildMI(MBB, MBBI, dl, TII.get(ARM::t2LDRpci))
@@ -465,7 +458,8 @@ bool ThumbRegisterInfo::rewriteFrameIndex(MachineBasicBlock::iterator II,
 
       // In case FrameReg is a high register, move it to a low reg to ensure it
       // can be used as an operand.
-      if (ARM::hGPRRegClass.contains(FrameReg) && FrameReg != ARM::SP) {
+      if (FrameReg.isPhysical() && ARM::hGPRRegClass.contains(FrameReg) &&
+          FrameReg != ARM::SP) {
         DestReg = MF.getRegInfo().createVirtualRegister(&ARM::tGPRRegClass);
         BuildMI(MBB, II, dl, TII.get(ARM::tMOVr), DestReg)
             .addReg(FrameReg)

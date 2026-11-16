@@ -16,6 +16,8 @@
 #ifndef MLIR_DIALECT_SPIRV_IR_COOPERATIVE_MATRIX_OPS
 #define MLIR_DIALECT_SPIRV_IR_COOPERATIVE_MATRIX_OPS
 
+include "mlir/Interfaces/AlignmentAttrInterface.td"
+
 //===----------------------------------------------------------------------===//
 // SPV_KHR_cooperative_matrix extension ops.
 //===----------------------------------------------------------------------===//
@@ -62,7 +64,7 @@ def SPIRV_KHRCooperativeMatrixLengthOp :
 
 // -----
 
-def SPIRV_KHRCooperativeMatrixLoadOp : SPIRV_KhrVendorOp<"CooperativeMatrixLoad", []> {
+def SPIRV_KHRCooperativeMatrixLoadOp : SPIRV_KhrVendorOp<"CooperativeMatrixLoad", [DeclareOpInterfaceMethods<AlignmentAttrOpInterface>]> {
   let summary = "Loads a cooperative matrix through a pointer";
 
   let description = [{
@@ -81,7 +83,8 @@ def SPIRV_KHRCooperativeMatrixLoadOp : SPIRV_KhrVendorOp<"CooperativeMatrixLoad"
     description of the layouts and detailed layout-specific rules.
 
     Stride further qualifies how matrix elements are laid out in memory. It must
-    be a scalar integer type and its exact semantics depend on MemoryLayout.
+    be a 32-bit scalar integer type and its exact semantics depend on
+    MemoryLayout.
 
     Memory Operand must be a Memory Operand literal. If not present, it is the
     same as specifying None.
@@ -106,7 +109,7 @@ def SPIRV_KHRCooperativeMatrixLoadOp : SPIRV_KhrVendorOp<"CooperativeMatrixLoad"
              -> !spirv.KHR.coopmatrix<16x8xi32, Workgroup, MatrixA>
 
     %1 = spirv.KHR.CooperativeMatrixLoad %ptr, %stride, <ColumnMajor>, <Volatile>
-         : !spirv.ptr<f32, StorageBuffer>, i64
+         : !spirv.ptr<f32, StorageBuffer>, i32
              -> !spirv.KHR.coopmatrix<8x8xf32, Subgroup, MatrixAcc>
     ```
   }];
@@ -127,7 +130,7 @@ def SPIRV_KHRCooperativeMatrixLoadOp : SPIRV_KhrVendorOp<"CooperativeMatrixLoad"
   let arguments = (ins
     SPIRV_AnyPtr:$pointer,
     SPIRV_KHR_CooperativeMatrixLayoutAttr:$matrix_layout,
-    SPIRV_Integer:$stride,
+    AnyI32:$stride,
     OptionalAttr<SPIRV_MemoryAccessAttr>:$memory_operand,
     OptionalAttr<IntValidAlignment<I32Attr>>:$alignment
   );
@@ -148,7 +151,7 @@ def SPIRV_KHRCooperativeMatrixLoadOp : SPIRV_KhrVendorOp<"CooperativeMatrixLoad"
 
 // -----
 
-def SPIRV_KHRCooperativeMatrixStoreOp : SPIRV_KhrVendorOp<"CooperativeMatrixStore", []> {
+def SPIRV_KHRCooperativeMatrixStoreOp : SPIRV_KhrVendorOp<"CooperativeMatrixStore", [DeclareOpInterfaceMethods<AlignmentAttrOpInterface>]> {
   let summary = "Stores a cooperative matrix through a pointer";
 
   let description = [{
@@ -167,7 +170,8 @@ def SPIRV_KHRCooperativeMatrixStoreOp : SPIRV_KhrVendorOp<"CooperativeMatrixStor
     description of the layouts and detailed layout-specific rules.
 
     Stride further qualifies how matrix elements are laid out in memory. It must
-    be a scalar integer type and its exact semantics depend on MemoryLayout.
+    be a 32-bit scalar integer type and its exact semantics depend on
+    MemoryLayout.
 
     Memory Operand must be a Memory Operand literal. If not present, it is the
     same as specifying None.
@@ -191,7 +195,7 @@ def SPIRV_KHRCooperativeMatrixStoreOp : SPIRV_KhrVendorOp<"CooperativeMatrixStor
         !spirv.ptr<i32, StorageBuffer>, !spirv.coopmatrix<16x8xi32, Workgroup, MatrixA>, i32
 
       spirv.KHR.CooperativeMatrixStore %ptr, %obj, %stride, <ColumnMajor>, <Volatile> :
-        !spirv.ptr<f32, StorageBuffer>, !spirv.coopmatrix<8x8xf32, Subgroup, MatrixAcc>, i64
+        !spirv.ptr<f32, StorageBuffer>, !spirv.coopmatrix<8x8xf32, Subgroup, MatrixAcc>, i32
     ```
   }];
 
@@ -212,7 +216,7 @@ def SPIRV_KHRCooperativeMatrixStoreOp : SPIRV_KhrVendorOp<"CooperativeMatrixStor
     SPIRV_AnyPtr:$pointer,
     SPIRV_AnyCooperativeMatrix:$object,
     SPIRV_KHR_CooperativeMatrixLayoutAttr:$matrix_layout,
-    SPIRV_Integer:$stride,
+    AnyI32:$stride,
     OptionalAttr<SPIRV_MemoryAccessAttr>:$memory_operand,
     OptionalAttr<IntValidAlignment<I32Attr>>:$alignment
   );

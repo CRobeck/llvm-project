@@ -21,11 +21,11 @@
 #include <__config>
 #include <__fwd/mdspan.h>
 #include <__mdspan/extents.h>
-#include <__memory/addressof.h>
 #include <__type_traits/common_type.h>
 #include <__type_traits/is_constructible.h>
 #include <__type_traits/is_convertible.h>
 #include <__type_traits/is_nothrow_constructible.h>
+#include <__utility/checked_int.h>
 #include <__utility/integer_sequence.h>
 #include <array>
 
@@ -47,9 +47,9 @@ public:
                 "layout_left::mapping template argument must be a specialization of extents.");
 
   using extents_type = _Extents;
-  using index_type   = typename extents_type::index_type;
-  using size_type    = typename extents_type::size_type;
-  using rank_type    = typename extents_type::rank_type;
+  using index_type   = extents_type::index_type;
+  using size_type    = extents_type::size_type;
+  using rank_type    = extents_type::rank_type;
   using layout_type  = layout_left;
 
 private:
@@ -57,10 +57,10 @@ private:
     if constexpr (extents_type::rank() == 0)
       return true;
 
-    index_type __prod = __ext.extent(0);
+    __checked_int<index_type> __prod(__ext.extent(0));
     for (rank_type __r = 1; __r < extents_type::rank(); __r++) {
-      bool __overflowed = __builtin_mul_overflow(__prod, __ext.extent(__r), std::addressof(__prod));
-      if (__overflowed)
+      __prod *= __ext.extent(__r);
+      if (__prod.__overflowed())
         return false;
     }
     return true;

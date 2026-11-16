@@ -17,6 +17,7 @@
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/FrontendOptions.h"
+#include "clang/Lex/Preprocessor.h"
 #include "clang/Serialization/PCHContainerOperations.h"
 #include "clang/Testing/CommandLineArgs.h"
 #include "clang/Testing/TestAST.h"
@@ -649,11 +650,12 @@ TEST_F(PragmaIncludeTest, ExportInUnnamedBuffer) {
   Clang->createVirtualFileSystem(VFS);
   Clang->createDiagnostics();
 
-  auto *FM = Clang->createFileManager();
+  Clang->createFileManager();
+  FileManager &FM = Clang->getFileManager();
   ASSERT_TRUE(Clang->ExecuteAction(*Inputs.MakeAction()));
   EXPECT_THAT(
-      PI.getExporters(llvm::cantFail(FM->getFileRef("foo.h")), *FM),
-      testing::ElementsAre(llvm::cantFail(FM->getFileRef("exporter.h"))));
+      PI.getExporters(llvm::cantFail(FM.getFileRef("foo.h")), FM),
+      testing::ElementsAre(llvm::cantFail(FM.getFileRef("exporter.h"))));
 }
 
 TEST_F(PragmaIncludeTest, OutlivesFMAndSM) {

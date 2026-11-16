@@ -112,13 +112,10 @@ public:
 
 /// A class to count success/fail statistics.
 struct StatsSuccessFail {
-  StatsSuccessFail(llvm::StringRef n) : name(n.str()) {}
-
   void NotifySuccess() { ++successes; }
   void NotifyFailure() { ++failures; }
 
   llvm::json::Value ToJSON() const;
-  std::string name;
   uint32_t successes = 0;
   uint32_t failures = 0;
 };
@@ -165,7 +162,9 @@ struct ModuleStats {
   double debug_index_time = 0.0;
   uint64_t debug_info_size = 0;
   bool symtab_loaded_from_cache = false;
+  bool symtab_parsed_from_object_file = false;
   bool symtab_saved_to_cache = false;
+  bool symtab_symbol_file_added_symbols = false;
   bool debug_info_index_loaded_from_cache = false;
   bool debug_info_index_saved_to_cache = false;
   bool debug_info_enabled = true;
@@ -322,17 +321,19 @@ public:
   void IncreaseSourceRealpathCompatibleCount(uint32_t count);
 
   StatsDuration &GetCreateTime() { return m_create_time; }
+  StatsDuration &GetLoadCoreTime() { return m_load_core_time; }
   StatsSuccessFail &GetExpressionStats() { return m_expr_eval; }
   StatsSuccessFail &GetFrameVariableStats() { return m_frame_var; }
   void Reset(Target &target);
 
 protected:
   StatsDuration m_create_time;
+  StatsDuration m_load_core_time;
   std::optional<StatsTimepoint> m_launch_or_attach_time;
   std::optional<StatsTimepoint> m_first_private_stop_time;
   std::optional<StatsTimepoint> m_first_public_stop_time;
-  StatsSuccessFail m_expr_eval{"expressionEvaluation"};
-  StatsSuccessFail m_frame_var{"frameVariable"};
+  StatsSuccessFail m_expr_eval;
+  StatsSuccessFail m_frame_var;
   std::vector<intptr_t> m_module_identifiers;
   uint32_t m_source_map_deduce_count = 0;
   uint32_t m_source_realpath_attempt_count = 0;
